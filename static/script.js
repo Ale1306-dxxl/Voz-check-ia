@@ -7,8 +7,12 @@ const inputImagen = document.getElementById("inputImagen");
 
 let recognizer = null;
 let escuchandoAudio = false;
+let cargandoAudio = false;
+let etiquetasModelo = [];
 
-const URL_AUDIO = "/static/my_model/";
+// ESTA ES LA CORRECCIÓN IMPORTANTE
+const BASE_URL = window.location.origin;
+const URL_AUDIO = BASE_URL + "/static/my_model/";
 
 // ROBOT SALUDA
 if (btnSaludar && robot) {
@@ -36,14 +40,19 @@ if (inputImagen && formImagen) {
     });
 }
 
-// AUDIO: Teachable Machine en vivo con speech-commands
+// AUDIO: activar / detener micrófono
 async function iniciarAudioTeachable() {
-    try {
-        if (escuchandoAudio) {
-            estado.textContent = "El micrófono ya está escuchando.";
-            return;
-        }
+    if (escuchandoAudio) {
+        detenerAudioTeachable();
+        return;
+    }
 
+    if (cargandoAudio) {
+        estado.textContent = "El modelo aún está cargando. Espera un momento...";
+        return;
+    }
+
+    try {
         if (typeof speechCommands === "undefined") {
             estado.textContent = "No cargó la librería speech-commands. Revisa el HTML.";
             return;
@@ -54,55 +63,37 @@ async function iniciarAudioTeachable() {
             return;
         }
 
+        cargandoAudio = true;
         cambiarBotonAudio("⏳", "Cargando modelo", "Espera unos segundos...");
+        estado.textContent = "Cargando modelo de audio...";
 
         const checkpointURL = URL_AUDIO + "model.json";
         const metadataURL = URL_AUDIO + "metadata.json";
 
-        recognizer = speechCommands.create(
-            "BROWSER_FFT",
-            undefined,
-            checkpointURL,
-            metadataURL
-        );
+        console.log("Modelo:", checkpointURL);
+        console.log("Metadata:", metadataURL);
 
-        estado.textContent = "Cargando modelo de audio...";
-        await recognizer.ensureModelLoaded();
-
-        const etiquetas = recognizer.wordLabels();
-        console.log("Etiquetas del modelo:", etiquetas);
-
-        escuchandoAudio = true;
-        cambiarBotonAudio("👂", "Escuchando audio", "Habla o reproduce un audio para analizar");
-        estado.textContent = "Micrófono activo. El modelo está analizando en vivo.";
-
-        recognizer.listen(result => {
-            const scores = result.scores;
-
-            let indiceMayor = 0;
-            let confianzaMayor = scores[0];
-
-            for (let i = 1; i < scores.length; i++) {
-                if (scores[i] > confianzaMayor) {
-                    confianzaMayor = scores[i];
-                    indiceMayor = i;
-                }
-            }
-
-            const etiqueta = etiquetas[indiceMayor];
-            const confianza = (confianzaMayor * 100).toFixed(1);
-
-            actualizarResultado(
-                "🎙️",
-                etiqueta,
-                "El modelo detectó: " + etiqueta + " con una confianza de " + confianza + "%."
+        if (!recognizer) {
+            recognizer = speechCommands.create(
+                "BROWSER_FFT",
+                undefined,
+                checkpointURL,
+                metadataURL
             );
 
-            estado.textContent = "Resultado detectado: " + etiqueta + " (" + confianza + "%)";
+            await recognizer.ensureModelLoaded();
+            etiquetasModelo = recognizer.wordLabels();
 
-            console.log("Resultado:", etiqueta, confianza + "%");
-            console.log("Scores:", scores);
-        }, {
+            console.log("Etiquetas del modelo:", etiquetasModelo);
+        }
+
+        escuchandoAudio = true;
+        cargandoAudio = false;
+
+        cambiarBotonAudio("⏹️", "Detener micrófono", "Haz clic para detener el análisis");
+        estado.textContent = "Micrófono activo. El modelo está analizando en vivo.";
+
+        recognizer.listen(resultadoAudio, {
             includeSpectrogram: true,
             probabilityThreshold: 0,
             invokeCallbackOnNoiseAndUnknown: true,
@@ -110,10 +101,87 @@ async function iniciarAudioTeachable() {
         });
 
     } catch (error) {
-        cambiarBotonAudio("🎙️", "Activar micrófono", "El audio se analizará en vivo con Teachable Machine");
+        cargandoAudio = false;
+        escuchandoAudio = false;
+
+        cambiarBotonAudio(
+            "🎙️",
+            "Activar micrófono",
+            "El audio se analizará en vivo con Teachable Machine"
+        );
+
         const mensaje = error && error.message ? error.message : String(error);
         estado.textContent = "Error de audio: " + mensaje;
         console.error("Audio error:", error);
+    }
+}
+
+// RECIBE RESULTADOS DEL MODELO
+function resultadoAudio(result) {
+    if (!escuchandoAudio) {
+        return;
+    }
+
+    const scores = result.scores;
+
+    let indiceMayor = 0;
+    let confianzaMayor = scores[0];
+
+    for (let i = 1; i < scores.length; i++) {
+        if (scores[i] > confianzaMayor) {
+            confianzaMayor = scores[i];
+            indiceMayor = i;
+        }
+    }
+
+    const etiqueta = etiquetasModelo[indiceMayor];
+    const confianza = (confianzaMayor * 100).toFixed(1);
+
+    mostrarPorcentajes(etiquetasModelo, scores);
+
+    actualizarResultado(
+        "🎙️",
+        etiqueta,
+        "El modelo detectó: " + etiqueta + " con una confianza de " + confianza + "%."
+    );
+
+    estado.textContent = "Resultado detectado: " + etiqueta + " (" + confianza + "%)";
+
+    console.log("Resultado:", etiqueta, confianza + "%");
+    console.log("Scores:", scores);
+}
+
+// DETENER MICRÓFONO
+function detenerAudioTeachable() {
+    try {
+        if (recognizer) {
+            recognizer.stopListening();
+        }
+
+        escuchandoAudio = false;
+        cargandoAudio = false;
+
+        cambiarBotonAudio(
+            "🎙️",
+            "Activar micrófono",
+            "El audio se analizará en vivo con Teachable Machine"
+        );
+
+        estado.textContent = "Micrófono detenido.";
+        console.log("Micrófono detenido correctamente.");
+
+    } catch (error) {
+        escuchandoAudio = false;
+        cargandoAudio = false;
+
+        cambiarBotonAudio(
+            "🎙️",
+            "Activar micrófono",
+            "El audio se analizará en vivo con Teachable Machine"
+        );
+
+        estado.textContent = "Se intentó detener el micrófono.";
+        console.error(error);
     }
 }
 
@@ -140,5 +208,29 @@ function actualizarResultado(icono, titulo, detalle) {
         iconoResultado.textContent = icono;
         tituloResultado.textContent = titulo;
         detalleResultado.textContent = detalle;
+    }
+}
+
+// MUESTRA PORCENTAJES DE CADA CLASE
+function mostrarPorcentajes(etiquetas, scores) {
+    const porcentajeIA = document.getElementById("porcentajeIA");
+    const porcentajeREAL = document.getElementById("porcentajeREAL");
+    const porcentajeRuido = document.getElementById("porcentajeRuido");
+
+    for (let i = 0; i < etiquetas.length; i++) {
+        const etiqueta = etiquetas[i];
+        const porcentaje = (scores[i] * 100).toFixed(1) + "%";
+
+        if (etiqueta === "IA" && porcentajeIA) {
+            porcentajeIA.textContent = porcentaje;
+        }
+
+        if (etiqueta === "REAL" && porcentajeREAL) {
+            porcentajeREAL.textContent = porcentaje;
+        }
+
+        if (etiqueta === "Ruido de fondo" && porcentajeRuido) {
+            porcentajeRuido.textContent = porcentaje;
+        }
     }
 }
