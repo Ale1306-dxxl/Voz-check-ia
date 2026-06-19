@@ -97,7 +97,7 @@
                         <span class="big-icon">🖼️</span>
                         <div>
                             <strong>Subir imagen</strong>
-                            <span>Selecciona una imagen para enviarla al backend</span>
+                            <span>Selecciona una imagen</span>
                         </div>
                     </label>
 
@@ -118,7 +118,7 @@
                         {% if resultado %}
                             <span class="big-icon" id="iconoResultado">✅</span>
                             <strong id="tituloResultado">{{ resultado }}</strong>
-                            <p id="detalleResultado">Resultado recibido desde Flask.</p>
+                            <p id="detalleResultado">Resultado recibido</p>
                         {% else %}
                             <span class="big-icon" id="iconoResultado">⌛</span>
                             <strong id="tituloResultado">Resultado pendiente</strong>
@@ -152,15 +152,20 @@
     </main>
 
     <footer>
-        <p>© 2026 VozCheck IA · Proyecto educativo de inteligencia artificial, audio e imágenes</p>
+        <p>© 2026 VozCheck IA · Proyecto  de inteligencia artificial, audio e imágenes</p>
     </footer>
 
     <!-- Librerías para el modelo de audio exportado desde Teachable Machine -->
+
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
 
     <!-- JavaScript propio -->
-    <script src="{{ url_for('static', filename='script.js') }}?v=1000"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=7000"></script>
+
+</body>
+</html>
+
 
 </body>
 </html>

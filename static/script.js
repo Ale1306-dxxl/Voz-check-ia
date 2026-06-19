@@ -12,7 +12,7 @@ let etiquetasModelo = [];
 
 // ESTA ES LA CORRECCIÓN IMPORTANTE
 const BASE_URL = window.location.origin;
-const URL_AUDIO = BASE_URL + "/static/my_model/";
+const URL_AUDIO = BASE_URL + "/static/audio_model/";
 
 // ROBOT SALUDA
 if (btnSaludar && robot) {
@@ -31,15 +31,112 @@ if (btnSaludar && robot) {
 }
 
 // IMAGEN: al seleccionar archivo, se envía sin botón extra
-if (inputImagen && formImagen) {
-    inputImagen.addEventListener("change", () => {
-        if (inputImagen.files.length > 0) {
-            estado.textContent = "Imagen seleccionada. Enviando al backend...";
-            formImagen.submit();
-        }
-    });
+let modeloImagen = null;
+let etiquetasImagen = [];
+
+const URL_IMAGEN = BASE_URL + "/static/image_model/";
+
+// IMAGEN: al seleccionar archivo, se analiza con TensorFlow.js
+if (inputImagen) {
+    inputImagen.addEventListener("change", analizarImagenTensorFlow);
 }
 
+async function analizarImagenTensorFlow() {
+    try {
+        if (!inputImagen.files || inputImagen.files.length === 0) {
+            return;
+        }
+
+        if (typeof tf === "undefined") {
+            estado.textContent = "No cargó TensorFlow.js. Revisa el HTML.";
+            return;
+        }
+
+        estado.textContent = "Cargando modelo de imagen...";
+
+        const modelURL = URL_IMAGEN + "model.json";
+        const metadataURL = URL_IMAGEN + "metadata.json";
+
+        console.log("Modelo imagen:", modelURL);
+        console.log("Metadata imagen:", metadataURL);
+
+        if (!modeloImagen) {
+            modeloImagen = await tf.loadLayersModel(modelURL);
+
+            const respuestaMetadata = await fetch(metadataURL);
+            const metadata = await respuestaMetadata.json();
+
+            etiquetasImagen = metadata.labels;
+
+            console.log("Modelo de imagen cargado.");
+            console.log("Etiquetas imagen:", etiquetasImagen);
+        }
+
+        const archivo = inputImagen.files[0];
+        const urlTemporal = URL.createObjectURL(archivo);
+
+        const imagen = new Image();
+
+        imagen.onload = async () => {
+            const tensorImagen = tf.tidy(() => {
+                return tf.browser.fromPixels(imagen)
+                    .resizeNearestNeighbor([224, 224])
+                    .toFloat()
+                    .div(127.5)
+                    .sub(1)
+                    .expandDims(0);
+            });
+
+            const prediccion = modeloImagen.predict(tensorImagen);
+            const scores = await prediccion.data();
+
+            tensorImagen.dispose();
+            prediccion.dispose();
+
+            let indiceMayor = 0;
+            let confianzaMayor = scores[0];
+
+            for (let i = 1; i < scores.length; i++) {
+                if (scores[i] > confianzaMayor) {
+                    confianzaMayor = scores[i];
+                    indiceMayor = i;
+                }
+            }
+
+            const etiqueta = etiquetasImagen[indiceMayor];
+            const confianza = (confianzaMayor * 100).toFixed(1);
+
+            let detalle = "";
+
+            for (let i = 0; i < etiquetasImagen.length; i++) {
+                detalle += etiquetasImagen[i] + ": " + (scores[i] * 100).toFixed(1) + "%";
+                if (i < etiquetasImagen.length - 1) {
+                    detalle += " | ";
+                }
+            }
+
+            actualizarResultado(
+                "🖼️",
+                "Imagen: " + etiqueta,
+                detalle
+            );
+
+            estado.textContent = "Imagen analizada: " + etiqueta + " (" + confianza + "%)";
+
+            console.log("Scores imagen:", scores);
+            console.log("Resultado imagen:", etiqueta, confianza + "%");
+
+            URL.revokeObjectURL(urlTemporal);
+        };
+
+        imagen.src = urlTemporal;
+
+    } catch (error) {
+        const mensaje = error && error.message ? error.message : String(error);
+        estado.textContent = "Error al analizar imagen: " + mensaje;
+        console.error("Error imagen:", error);
+    }
+}
 // AUDIO: activar / detener micrófono
 async function iniciarAudioTeachable() {
     if (escuchandoAudio) {
@@ -54,18 +151,18 @@ async function iniciarAudioTeachable() {
 
     try {
         if (typeof speechCommands === "undefined") {
-            estado.textContent = "No cargó la librería speech-commands. Revisa el HTML.";
+            estado.textContent = "ERROR";
             return;
         }
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            estado.textContent = "Tu navegador no soporta acceso al micrófono o requiere HTTPS.";
+            estado.textContent = "Tu navegador no soporta acceso al micrófono.";
             return;
         }
 
         cargandoAudio = true;
-        cambiarBotonAudio("⏳", "Cargando modelo", "Espera unos segundos...");
-        estado.textContent = "Cargando modelo de audio...";
+        cambiarBotonAudio("⏳", "Cargando", "Espera unos segundos...");
+        estado.textContent = "Cargando audio...";
 
         const checkpointURL = URL_AUDIO + "model.json";
         const metadataURL = URL_AUDIO + "metadata.json";
@@ -91,7 +188,7 @@ async function iniciarAudioTeachable() {
         cargandoAudio = false;
 
         cambiarBotonAudio("⏹️", "Detener micrófono", "Haz clic para detener el análisis");
-        estado.textContent = "Micrófono activo. El modelo está analizando en vivo.";
+        estado.textContent = "Micrófono activo. analizando en vivo.";
 
         recognizer.listen(resultadoAudio, {
             includeSpectrogram: true,
@@ -107,7 +204,7 @@ async function iniciarAudioTeachable() {
         cambiarBotonAudio(
             "🎙️",
             "Activar micrófono",
-            "El audio se analizará en vivo con Teachable Machine"
+            
         );
 
         const mensaje = error && error.message ? error.message : String(error);
@@ -142,7 +239,7 @@ function resultadoAudio(result) {
     actualizarResultado(
         "🎙️",
         etiqueta,
-        "El modelo detectó: " + etiqueta + " con una confianza de " + confianza + "%."
+        "Se detectó: " + etiqueta + " con una confianza de " + confianza + "%."
     );
 
     estado.textContent = "Resultado detectado: " + etiqueta + " (" + confianza + "%)";
@@ -164,7 +261,7 @@ function detenerAudioTeachable() {
         cambiarBotonAudio(
             "🎙️",
             "Activar micrófono",
-            "El audio se analizará en vivo con Teachable Machine"
+            "El audio se analizará en vivo"
         );
 
         estado.textContent = "Micrófono detenido.";
@@ -177,7 +274,7 @@ function detenerAudioTeachable() {
         cambiarBotonAudio(
             "🎙️",
             "Activar micrófono",
-            "El audio se analizará en vivo con Teachable Machine"
+            
         );
 
         estado.textContent = "Se intentó detener el micrófono.";
